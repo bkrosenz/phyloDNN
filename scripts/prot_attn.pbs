@@ -1,0 +1,42 @@
+#!/bin/bash
+#####  Constructed by HPC everywhere #####
+#SBATCH --mail-user=bkrosenz@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=0-14:59:00
+#SBATCH --account=r01149
+#SBATCH --cpus-per-gpu=10
+#SBATCH --gpus-per-node=1
+#SBATCH --partition=hopper
+#SBATCH --mail-type=FAIL,BEGIN,END
+#SBATCH -o equiv_prot_attn_%j.txt
+
+######  Module commands #####
+module load conda cudatoolkit/12.6
+
+######  Job commands go below this line #####
+. deactivate
+conda activate /N/project/phyloML/app/Quartz/miniconda3/envs/torch
+
+cd /N/project/phyloML/phylo-DNN
+# deeper 
+
+VALDIR=/N/project/phyloML/data/phyloDNN/val/prot/
+# CONFIG_DIR=/N/project/phyloML/trained_models/configurations/equivariant
+ROOT_DIR=/N/project/phyloML/data/phyloDNN/train/prot/
+CONFIG_DIR=/N/project/phyloML/trained_models/configurations/attn
+CHECKPOINT_DIR=/N/project/phyloML/trained_models/attn
+EPOCHS=200
+SEQDIR=lg_gc
+
+
+for model in seq s3p3_mae row_only s3cr_p3r_mae s3p3_row_mae seq_row_only seq_col_only col_only original row_s2p1_l21  s5r_p1r_mae s3p3_h64_lse
+do
+    python train_and_test.py --rootdir $ROOT_DIR  \
+        --seqdir $SEQDIR  \
+        --config $CONFIG_DIR/$model.config  \
+        --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/$model/   \
+        --valdir $VALDIR  \
+        --workers 10 --epochs $EPOCHS \
+        --pin_memory --early_stopping --check_interval 0.2 # --amp; #--batch_size 16 --amp 
+done

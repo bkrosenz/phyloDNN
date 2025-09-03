@@ -1,0 +1,52 @@
+#!/bin/bash
+#####  Constructed by HPC everywhere #####
+#SBATCH --mail-user=bkrosenz@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=01-1:30:00
+#SBATCH --account=r01149
+#SBATCH --cpus-per-gpu=10
+#SBATCH --gpus-per-node=1
+#SBATCH --partition=gpu
+#SBATCH --mail-type=FAIL,BEGIN,END
+#SBATCH -o equiv_jc_d64_%j.txt
+
+######  Module commands #####
+module load conda cudatoolkit/12.6
+
+######  Job commands go below this line #####
+. deactivate
+conda deactivate
+conda activate /N/project/phyloML/app/Quartz/miniconda3/envs/torch
+
+cd /N/project/phyloML/phylo-DNN
+# deeper 
+
+VALDIR=/N/project/phyloML/data/phyloDNN/val/dna/
+CONFIG_DIR=/N/project/phyloML/trained_models/configurations/small/h32/mae
+ROOT_DIR=/N/project/phyloML/data/phyloDNN/train/dna/
+CHECKPOINT_DIR=/N/project/phyloML/trained_models/final
+EPOCHS=100
+SEQDIR=jc
+
+# resume training
+for model in seq1_f64_i7_h4 seq1b_f64_i7_h4 seq1_f64_h4 seq1b_f64_h4 seq1_f128x7_h4 seq1_f128x7 seq1_f128x7_adam  seq1_f256x8  seq1_f64 #`ls $CHECKPOINT_DIR/${SEQDIR}/`
+do
+        python train_and_test.py --rootdir $ROOT_DIR \
+            --seqdir jc \
+            --config $CONFIG_DIR/$model.config \
+            --checkpoint_dir $CHECKPOINT_DIR/${SEQDIR}/$model/ \
+            --valdir $VALDIR \
+            --workers 10 --epochs $EPOCHS; # --amp;
+        #  --batch_size 2048; 
+    for NTAXA in 20 40 60
+    do
+        python train_and_test.py \
+                --predict /N/project/phyloML/data/phyloDNN/test/jc_${NTAXA} \
+                --checkpoint_dir $CHECKPOINT_DIR/${SEQDIR}/$model \
+                --out /N/project/phyloML/data/phyloDNN/test/jc_${NTAXA}/predictions_$model \
+                --workers 10 --batch_size 512;
+        done
+done
+
+

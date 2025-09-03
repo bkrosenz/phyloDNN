@@ -1,0 +1,105 @@
+#!/bin/bash
+#####  Constructed by HPC everywhere #####
+#SBATCH --mail-user=bkrosenz@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=0-4:59:00
+#SBATCH --account=r01149
+#SBATCH --cpus-per-gpu=10
+#SBATCH --gpus-per-node=1
+#SBATCH --partition=hopper
+#SBATCH --mail-type=FAIL,BEGIN,END
+#SBATCH -o predict_attn_%j.txt
+
+######  Module commands #####
+module load conda cudatoolkit/12.6
+
+######  Job commands go below this line #####
+. deactivate
+conda deactivate
+conda activate /N/project/phyloML/app/Quartz/miniconda3/envs/torch
+
+cd /N/project/phyloML/phylo-DNN
+# deeper 
+export PYTHONWARNINGS="ignore::SyntaxWarning"
+
+CHECKPOINT_DIR=/N/project/phyloML/trained_models/attn
+
+#        for model in row_only original_32  original row_only_32 row_s2p1_l21  s3p3_h64_lse
+
+for TAXA in 20 40 60 #100 ;
+do
+         SEQDIR=lg_indel ;
+         for model in `ls $CHECKPOINT_DIR/$SEQDIR/`;
+            do
+                python train_and_test.py \
+                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA} \
+                    --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/${model}/ \
+                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA}/predictions_${model} \
+                    --workers 10 --batch_size 4;
+            done
+	python train_and_test.py \
+                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+                    --phyloformer \
+                    --checkpoint_dir /N/project/phyloML/app/Phyloformer/models/pf_indel.ckpt \
+                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_pformer \
+                    --workers 10 --batch_size 8 --pin_memory;
+done
+
+
+#for model in row_only original_32  original row_only_32 row_s2p1_l21  s3p3_h64_lse
+for TAXA in 20 40 60 #100 
+do
+    for SEQDIR in lg_gc
+    do
+         for model in `ls $CHECKPOINT_DIR/$SEQDIR/`
+#        for model in row_only original_32  original row_only_32 row_s2p1_l21  s3p3_h64_lse
+            do
+                python train_and_test.py \
+                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA} \
+                    --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/${model}/ \
+                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA}/predictions_${model} \
+                    --workers 10 --batch_size 4 --pin_memory;
+            done
+	python train_and_test.py \
+                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+                    --phyloformer \
+                    --checkpoint_dir /N/project/phyloML/app/Phyloformer/models/pf.ckpt \
+                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_pformer \
+                    --workers 10 --batch_size 4 --pin_memory;
+    done
+    for SEQDIR in jc hky;
+    do
+    for model in `ls $CHECKPOINT_DIR/$SEQDIR/`
+        do
+            python train_and_test.py  \
+                --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA} \
+                --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/$model/   \
+                --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA}/predictions_$model \
+                --workers 10  \
+                --pin_memory --batch_size 4;
+        done
+    done
+    SEQDIR=hky_f
+    for model in `ls $CHECKPOINT_DIR/$SEQDIR/`
+    do
+        python train_and_test.py  \
+            --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA} \
+            --checkpoint_dir $CHECKPOINT_DIR/hky_alpha1/$model/   \
+            --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_${TAXA}/predictions_$model \
+            --workers 10  \
+            --pin_memory --batch_size 4;
+        done
+
+done
+
+
+for TAXA in 20 40 60 100 
+do
+for SEQDIR in jc hky hky_f lg_gc;
+    do
+    python plot_drf.py --dir ${SEQDIR}_${TAXA}  --treefile trees_${TAXA}.tsv
+done
+    python plot_drf.py --dir lg_indel_${TAXA} --treefile trees_${TAXA}.tsv
+    python plot_drf.py --dir lg_gc_${TAXA} --treefile trees_${TAXA}.tsv
+done

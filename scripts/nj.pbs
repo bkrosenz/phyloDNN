@@ -1,0 +1,80 @@
+#!/bin/bash
+#####  Constructed by HPC everywhere #####
+#SBATCH --mail-user=bkrosenz@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --time=01-3:59:00
+#SBATCH --mem=96gb
+#SBATCH --mail-type=FAIL,BEGIN,END
+#SBATCH --job-name=iqtree
+#SBATCH --output=iqtree-%x.%j.out
+
+######  Module commands #####
+module load conda gnu-parallel # paup phylip
+conda deactivate
+. deactivate
+conda activate /N/project/phyloML/app/Quartz/miniconda3/envs/p311
+# conda activate sim
+
+cd /N/project/phyloML/simphy
+
+######  Job commands go below this line #####
+# find sim6_test_shallow/raw -name '*TRUE.phy' \
+#     | parallel -j8 /N/project/phyloML/app/Quartz/miniconda3/envs/py38/bin/python /N/project/phyloML/phylo-DNN/split_seqs.py {} \;
+
+# find sim6_test_shallow/raw -name '*TRUE.g*.phy' | parallel --shuf -j4 iqtree2 \
+#     -o 0_0_0 -nt 4 -s {} --threads-max 16 \
+#     --mem 16G --seqtype AA \
+#     --quiet --prefix {.}.iqtree # --redo 
+
+# find sim6_test_shallow/raw -name '*TRUE.g*.phy' | parallel --shuf -j4 iqtree2 \
+#     -nt 4 -s {} --threads-max 16 --mem 16G \
+#     --seqtype AA \
+#     --quiet --prefix {.}.iqtree # --redo 
+
+TESTDIR=/N/project/phyloML/data/phyloDNN/test
+
+# val
+for data in hky; #jc hky hky_alpha1;
+do
+    parallel -j2 iqtree -s {1} -m {2} -fast -t BIONJ --quiet -n 0 -nt 4 --prefix $TESTDIR/${data}/{1/.}_{2}.nj ::: `find $TESTDIR/${data}/ -name '*tips.phy' ` ::: JC HKY HKY+G
+done
+
+# infer nj trees with iqtree
+for data in jc hky hky_f;
+do
+    parallel -j20 iqtree -s {1} -m {2} -fast -t BIONJ --quiet -n 0 -nt 4 --prefix $TESTDIR/${data}_60/{1/.}_{2}.nj ::: `find $TESTDIR/${data}_60/ -name '*tips.phy' ` ::: JC HKY HKY+G
+done
+
+
+for data in lg_gc lg_indel;
+do
+    parallel -j20 iqtree -s {1} -m {2} -fast -t BIONJ --quiet -n 0 -nt 4 --prefix $TESTDIR/${data}_60/{1/.}_{2}.nj ::: `find $TESTDIR/${data}_60/ -name '*tips.phy' ` ::: LG+G
+done
+
+# infer ml trees with iqtree
+parallel -j10  iqtree -s {1} -m JC  --quiet -n 5 -nt 4 --prefix $TESTDIR/jc_60/{1/.}.iqtree ::: `find $TESTDIR/jc_60/ -name '*phy' ` &
+parallel -j10  iqtree -s {1} -m HKY  --quiet -n 5 -nt 4 --prefix $TESTDIR/hky_60/{1/.}.iqtree ::: `find $TESTDIR/hky_60/ -name '*phy' ` &
+parallel -j10  iqtree -s {1} -m HKY+G  --quiet -n 5 -nt 4 --prefix $TESTDIR/hky_f_60/{1/.}.iqtree ::: `find $TESTDIR/hky_f_60/ -name '*phy' ` &
+
+# infer ml trees with iqtree
+parallel -j10  iqtree -s {1} -m JC  --quiet -n 5 -nt 4 --prefix $TESTDIR/jc_20/{1/.}.iqtree ::: `find $TESTDIR/jc_20/ -name '*phy' ` &
+parallel -j10  iqtree -s {1} -m HKY  --quiet -n 5 -nt 4 --prefix $TESTDIR/hky_20/{1/.}.iqtree ::: `find $TESTDIR/hky_20/ -name '*phy' ` &
+parallel -j10  iqtree -s {1} -m HKY+G  --quiet -n 5 -nt 4 --prefix $TESTDIR/hky_f_20/{1/.}.iqtree ::: `find $TESTDIR/hky_f_20/ -name '*phy' ` &
+
+
+for data in lg_indel; # lg_gc ;
+do
+    for taxa in  40 #20 60;
+    do
+        parallel -j10  iqtree -s {1} -m LG+G --quiet -n 5 -T 4 -nt 4 --prefix $TESTDIR/${data}_$taxa/{1/.}.iqtree ::: `find $TESTDIR/${data}_$taxa/ -name '*phy' ` &
+    done
+done
+# concatenate all trees
+
+# compute d_RF to true trees
+parallel -j4 python  summarize_trees.py --tree /N/project/phyloML/data/phyloDNN/val/dna/trees.tsv --dir /N/project/phyloML/data/phyloDNN/val/dna/{}/ ::: jc hky hky_f
+
+
+parallel -j4 python  summarize_trees.py --tree /N/project/phyloML/data/phyloDNN/test/trees_{2}.tsv --dir /N/project/phyloML/data/phyloDNN/test/{1}_{2}/ ::: jc hky hky_f lg_gc lg_indel ::: 20 40 60

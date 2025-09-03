@@ -1,0 +1,154 @@
+#!/bin/bash
+#####  Constructed by HPC everywhere #####
+#SBATCH --mail-user=bkrosenz@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=0-5:59:00
+#SBATCH --account=r01149
+#SBATCH --cpus-per-gpu=10
+#SBATCH --gpus-per-node=1
+#SBATCH --partition=hopper
+#SBATCH --mail-type=FAIL,BEGIN,END
+#SBATCH -o predict_all_seqNets_%j.txt
+
+######  Module commands #####
+module load conda
+
+######  Job commands go below this line #####
+. deactivate
+conda deactivate
+conda activate /N/project/phyloML/app/Quartz/miniconda3/envs/torch
+
+cd /N/project/phyloML/phylo-DNN
+# deeper 
+
+CONFIG_DIR=/N/project/phyloML/trained_models/configurations/small
+CHECKPOINT_DIR=/N/project/phyloML/trained_models/final # /N/project/phyloML/trained_models/attn
+for TAXA in 20 40 60 
+    do
+        for SEQDIR in hky jc lg_indel lg_gc
+            do
+                for model in `ls $CHECKPOINT_DIR/$SEQDIR/`
+                    # for model in  pair1b_f64_h4 seq1_f64_h4 seq1b_f64_h4 seq1b_f64_i7_h4 seq1_f64_l21 seq1b_f64_l21 seq1_f64x2 seq1_f64 seq1b_f64_h4_i7_l21
+                    do
+                        python train_and_test.py \
+                            --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+                            --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/${model}/ \
+                            --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_${model} \
+                            --workers 10 --batch_size 8 --pin_memory;
+                    done
+                # for model in jcnet_e hamming;
+                #     do
+                #         python train_and_test.py \
+                #             --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+                #             --config $CONFIG_DIR/${model}.config \
+                #             --checkpoint_dir /tmp \
+                #             --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_${model} \
+                #             --workers 10 --batch_size 8 --pin_memory;
+                #     done
+            done
+
+        SEQDIR=hky_alpha1
+        for model in `ls $CHECKPOINT_DIR/${SEQDIR}/`
+            do
+                python train_and_test.py \
+                    --predict /N/project/phyloML/data/phyloDNN/test/hky_f_$TAXA \
+                    --checkpoint_dir $CHECKPOINT_DIR/${SEQDIR}/${model}/ \
+                    --out /N/project/phyloML/data/phyloDNN/test/hky_f_$TAXA/predictions_${model} \
+                    --workers 10 --batch_size 4 --pin_memory;
+            done
+        # for model in jcnet_e hamming;
+        #     do
+        #         python train_and_test.py \
+        #             --predict /N/project/phyloML/data/phyloDNN/test/hky_f_$TAXA \
+        #             --config $CONFIG_DIR/${model}.config \
+        #             --checkpoint_dir /tmp \
+        #             --out /N/project/phyloML/data/phyloDNN/test/hky_f_$TAXA/predictions_${model} \
+        #             --workers 10 --batch_size 8 --pin_memory;
+        #     done
+        
+    
+#    SEQDIR=lg_gc
+#	python train_and_test.py \
+#                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+#                    --phyloformer \
+#                    --model_path /N/project/phyloML/app/Phyloformer/models/pf.ckpt \
+#                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_pformer \
+#                    --workers 10 --batch_size 2 --pin_memory;
+#                    
+#    SEQDIR=lg_indel
+#	python train_and_test.py \
+#                    --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+#                    --phyloformer \
+#                    --model_path /N/project/phyloML/app/Phyloformer/models/pf_indel.ckpt \
+#                    --out /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA/predictions_pformer \
+#                    --workers 10 --batch_size 2 --pin_memory;
+done
+
+echo plotting...
+for TAXA in 20 40 60
+do
+    for SEQDIR in jc hky hky_f lg_gc lg_indel;
+        do
+            python plot_drf.py --dir ${SEQDIR}_$TAXA --treefile trees_$TAXA.tsv   &
+            python plot_drf.py --threshold .2 --dir ${SEQDIR}_$TAXA --treefile trees_$TAXA.tsv  
+    done
+done
+
+
+SEQDIR=lg_gc
+
+for CHECKPOINT_DIR in /N/project/phyloML/trained_models/final #/N/project/phyloML/trained_models/attn;
+do
+
+    for model in `ls $CHECKPOINT_DIR/$SEQDIR/`;
+        do python train_and_test.py \
+                --checkpoint_dir $CHECKPOINT_DIR/$SEQDIR/${model}/ --summarize >> summarize_all.txt
+    done
+
+done
+      
+python train_and_test.py \
+                --phyloformer \
+                --model_path /N/project/phyloML/app/Phyloformer/models/pf.ckpt \
+                    --summarize  >> summarize_all.txt
+              
+SEQDIR=lg_indel
+python train_and_test.py \
+                --predict /N/project/phyloML/data/phyloDNN/test/${SEQDIR}_$TAXA \
+                --phyloformer \
+                --model_path /N/project/phyloML/app/Phyloformer/models/pf_indel.ckpt \
+                    --summarize  >> summarize_all.txt
+
+for model in `ls $CHECKPOINT_DIR/lg_gc/`
+    # for model in  pair1b_f64_h4 seq1_f64_h4 seq1b_f64_h4 seq1b_f64_i7_h4 seq1_f64_l21 seq1b_f64_l21 seq1_f64x2 seq1_f64 seq1b_f64_h4_i7_l21
+    do
+        python train_and_test.py \
+            --predict /N/project/phyloML/data/phyloDNN/test/lg_gc_20_long \
+            --checkpoint_dir $CHECKPOINT_DIR/lg_gc/${model}/ \
+            --out /N/project/phyloML/data/phyloDNN/test/lg_gc_20_long/predictions_${model} \
+            --workers 10 --batch_size 1 --pin_memory;
+    done
+
+
+for model in seq s3cr_p3r_mae s3p3_mae row_only seq1b_f64_i7_h4 seq1_f64_h4;   
+do
+    for taxa in 100 80 60;
+    do
+    
+        python train_and_test.py    \
+            --predict /N/project/phyloML/data/phyloDNN/test/lg_gc_$taxa  \
+            --checkpoint_dir $CHECKPOINT_DIR/lg_gc/${model}/       \
+            --out /N/project/phyloML/data/phyloDNN/test/lg_gc_$taxa/predictions_${model}   \
+            --workers 10 --batch_size 1 ;    
+    done;
+        for taxa in 20 40 60;
+    do
+    
+        python train_and_test.py    \
+            --predict /N/project/phyloML/data/phyloDNN/test/lg_gc_$taxa  \
+            --checkpoint_dir $CHECKPOINT_DIR/lg_gc/${model}/       \
+            --out /N/project/phyloML/data/phyloDNN/test/lg_gc_$taxa/predictions_${model}   \
+            --workers 10 --batch_size 4 ;    
+    done;
+done
